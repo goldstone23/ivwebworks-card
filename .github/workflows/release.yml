@@ -1,0 +1,51 @@
+name: Build APK
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack project
+        run: tar -xzf project.tar.gz
+      - name: Fetch card page and logo from the live site
+        run: |
+          mkdir -p app/src/main/assets app/src/main/res/mipmap app/src/main/res/drawable
+          curl -sSL https://pankaj-sachdeva.vercel.app/ -o app/src/main/assets/card.html
+          python3 - <<'PY'
+          import re, base64
+          html = open('app/src/main/assets/card.html', encoding='utf-8').read()
+          m = re.search(r'data:image/webp;base64,([A-Za-z0-9+/=]+)', html)
+          data = base64.b64decode(m.group(1))
+          for p in ('app/src/main/res/mipmap/ic_launcher.webp',
+                    'app/src/main/res/drawable/logo.webp'):
+              open(p, 'wb').write(data)
+          print('logo bytes:', len(data))
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Accept SDK licences
+        run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk IVWebWorksCard.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IVWebWorksCard-APK
+          path: IVWebWorksCard.apk
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: IV WebWorks Card APK
+          files: IVWebWorksCard.apk
